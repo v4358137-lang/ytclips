@@ -1,0 +1,130 @@
+import { useState, useRef } from "react";
+
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+export default function Uploader({ onJobStart }) {
+  const [file, setFile] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [maxClips, setMaxClips] = useState(5);
+  const [clipDuration, setClipDuration] = useState(60);
+  const [method, setMethod] = useState("scene");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef();
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("max_clips", maxClips);
+    form.append("clip_duration", clipDuration);
+    form.append("method", method);
+
+    try {
+      const res = await fetch(
+        `${API}/upload?max_clips=${maxClips}&clip_duration=${clipDuration}&method=${method}`,
+        { method: "POST", body: form }
+      );
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      onJobStart(data.job_id);
+    } catch (e) {
+      setError(e.message || "Upload failed. Check your backend URL.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const formatSize = (bytes) => {
+    if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + " GB";
+    if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + " MB";
+    return (bytes / 1e3).toFixed(0) + " KB";
+  };
+
+  return (
+    <div className="uploader">
+      <div
+        className={`drop-zone ${dragging ? "dragging" : ""} ${file ? "has-file" : ""}`}
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current.click()}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept="video/*"
+          hidden
+          onChange={(e) => setFile(e.target.files[0])}
+        />
+        {file ? (
+          <div className="file-info">
+            <div className="file-icon">🎬</div>
+            <div className="file-name">{file.name}</div>
+            <div className="file-size">{formatSize(file.size)}</div>
+            <div className="file-change">Click to change</div>
+          </div>
+        ) : (
+          <div className="drop-content">
+            <div className="drop-icon">📁</div>
+            <div className="drop-title">Drop your video here</div>
+            <div className="drop-sub">or click to browse · MP4, MOV, AVI, MKV, WEBM</div>
+          </div>
+        )}
+      </div>
+
+      <div className="settings">
+        <h3 className="settings-title">⚙️ Settings</h3>
+        <div className="settings-grid">
+          <div className="setting-item">
+            <label>Detection Method</label>
+            <select value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="scene">🎞 Scene Detection (fast)</option>
+              <option value="transcript">🎙 AI Transcript (accurate)</option>
+              <option value="audio">🔊 Audio Peaks</option>
+            </select>
+          </div>
+          <div className="setting-item">
+            <label>Max Clips: <strong>{maxClips}</strong></label>
+            <input
+              type="range" min="1" max="10" value={maxClips}
+              onChange={(e) => setMaxClips(Number(e.target.value))}
+            />
+          </div>
+          <div className="setting-item">
+            <label>Clip Duration: <strong>{clipDuration}s</strong></label>
+            <input
+              type="range" min="15" max="180" step="15" value={clipDuration}
+              onChange={(e) => setClipDuration(Number(e.target.value))}
+            />
+          </div>
+        </div>
+      </div>
+
+      {error && <div className="error-msg">⚠️ {error}</div>}
+
+      <button
+        className="upload-btn"
+        onClick={handleUpload}
+        disabled={!file || uploading}
+      >
+        {uploading ? "⏳ Uploading..." : "🚀 Generate Clips"}
+      </button>
+
+      <div className="method-info">
+        {method === "scene" && "🎞 Scene Detection: Fast. Splits at every visual scene change."}
+        {method === "transcript" && "🎙 AI Transcript: Uses Whisper AI to find natural speech breaks. Slowest but smartest."}
+        {method === "audio" && "🔊 Audio Peaks: Finds moments with high energy / loud audio."}
+      </div>
+    </div>
+  );
+}

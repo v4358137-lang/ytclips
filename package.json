@@ -1,0 +1,80 @@
+import { useEffect, useState } from "react";
+
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+const STEPS = [
+  { label: "Uploading video", threshold: 5 },
+  { label: "Analyzing content", threshold: 25 },
+  { label: "Detecting key moments", threshold: 50 },
+  { label: "Cutting clips", threshold: 85 },
+  { label: "Finalizing", threshold: 99 },
+];
+
+export default function Processing({ jobId, onDone }) {
+  const [status, setStatus] = useState("starting");
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState("Starting...");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API}/status/${jobId}`);
+        const data = await res.json();
+        setProgress(data.progress);
+        setStatus(data.status);
+        setStatusText(data.status.charAt(0).toUpperCase() + data.status.slice(1) + "...");
+
+        if (data.status === "done") {
+          clearInterval(interval);
+          onDone(data.clips);
+        }
+        if (data.status === "error") {
+          clearInterval(interval);
+          setError(data.error || "Unknown error");
+        }
+      } catch (e) {
+        console.error("Poll error:", e);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [jobId]);
+
+  const currentStep = STEPS.filter((s) => progress >= s.threshold).length - 1;
+
+  return (
+    <div className="processing">
+      <div className="processing-icon">⚙️</div>
+      <h2 className="processing-title">Processing Your Video</h2>
+      <p className="processing-sub">This may take a few minutes depending on video length</p>
+
+      <div className="progress-bar-wrap">
+        <div className="progress-bar" style={{ width: `${progress}%` }} />
+      </div>
+      <div className="progress-label">{progress}% — {statusText}</div>
+
+      <div className="steps">
+        {STEPS.map((step, i) => (
+          <div
+            key={i}
+            className={`step ${i < currentStep ? "done" : i === currentStep ? "active" : "pending"}`}
+          >
+            <span className="step-dot">
+              {i < currentStep ? "✅" : i === currentStep ? "⏳" : "○"}
+            </span>
+            <span className="step-label">{step.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {error && (
+        <div className="error-msg">
+          ❌ Error: {error}
+          <br />
+          <small>Check that FFmpeg is installed on the server.</small>
+        </div>
+      )}
+    </div>
+  );
+}
